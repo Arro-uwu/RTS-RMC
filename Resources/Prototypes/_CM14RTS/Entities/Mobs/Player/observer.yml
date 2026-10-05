@@ -1,0 +1,220 @@
+- type: entity
+  parent:
+  - Incorporeal
+  - BaseMob
+  id: CM14RTSMobObserverBase
+  abstract: true
+  name: observer
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: ZombieImmune
+  - type: Sprite
+    sprite: _CM14RTS/Mobs/Observer/observer.rsi
+    layers:
+    - state: eye
+  - type: ContentEye
+    maxZoom: 1.44,1.44
+  - type: Eye
+    drawFov: false
+  - type: Examiner
+    skipChecks: true
+  - type: RTSObserver
+  - type: Speech
+  - type: UnblockableSpeech
+  - type: ShowElectrocutionHUD
+  - type: IntrinsicRadioReceiver
+  - type: Tag
+    tags:
+    - BypassInteractionRangeChecks
+  - type: ActiveInputMover
+  - type: IgnoreInteractionRange
+    whitelist:
+      components:
+      - Ladder
+    range: 15
+
+- type: entity
+  parent: CM14RTSMobObserverBase
+  id: CM14RTSMobObserverUSCM
+  components:
+  - type: RTSObserver
+    faction: USCM
+  - type: Spectral
+  - type: Tag
+    tags:
+    - AllowGhostShownByEvent
+  - type: Sprite
+    sprite: _CM14RTS/Mobs/Observer/observer.rsi
+    layers:
+    - state: eye
+  - type: ViewIntelObjectives
+  - type: UserInterface
+    interfaces:
+      enum.ViewIntelObjectivesUI.Key:
+        type: ViewIntelObjectivesBui
+        requireInputValidation: false
+      enum.DialogUiKey.Key:
+        type: DialogBui
+        requireInputValidation: false
+      enum.TacticalMapUserUi.Key:
+        type: TacticalMapUserBui
+  - type: ActiveRadio
+    channels:
+    - MarineHighCommand
+    - MarineCommon
+    - MarineCommand
+    - MarineMedical
+    - MarineEngineer
+    - MarineMilitaryPolice
+    - MarineRequisition
+    - MarineIntel
+    - MarineJTAC
+    - MarineAlpha
+    - MarineBravo
+    - MarineCharlie
+    - MarineDelta
+    - MarineEcho
+    - MarineFoxtrot
+    - MarineSOF
+    - MarineSurvivor
+    - Colony
+    - ColonyHandheld
+    - WEYA
+    - CMB
+    - Provost
+    - RoyalMarine
+  - type: IntrinsicRadioTransmitter
+    channels:
+    - MarineHighCommand
+    - MarineCommon
+    - MarineCommand
+    - MarineMedical
+    - MarineEngineer
+    - MarineMilitaryPolice
+    - MarineRequisition
+    - MarineIntel
+    - MarineJTAC
+    - MarineAlpha
+    - MarineBravo
+    - MarineCharlie
+    - MarineDelta
+    - MarineEcho
+    - MarineFoxtrot
+    - MarineSOF
+    - MarineSurvivor
+    - Colony
+    - ColonyHandheld
+    - WEYA
+    - CMB
+    - Provost
+    - RoyalMarine
+  - type: TacticalMapUser
+    actionId: CM14RTSActionOpenTacticalMapMarine
+    marines: true
+  - type: Language
+    spokenLanguages:
+      - English
+    understoodLanguages:
+      - English
+    currentLanguage: English
+    defaultLanguage: English
+
+- type: entity
+  parent: CM14RTSMobObserverBase
+  id: CM14RTSMobObserverHive
+  components:
+  - type: RTSObserver
+    faction: Hive
+  - type: Spectral
+  - type: Tag
+    tags:
+    - AllowGhostShownByEvent
+  - type: Sprite
+    color: "#a800a8"
+    sprite: _CM14RTS/Mobs/Observer/observer.rsi
+    layers:
+    - state: eye
+  - type: VentSight
+  - type: ActiveRadio
+    channels:
+    - Hivemind
+  - type: IntrinsicRadioTransmitter
+    channels:
+    - Hivemind
+  - type: UserInterface
+    interfaces:
+      enum.DialogUiKey.Key:
+        type: DialogBui
+        requireInputValidation: false
+      enum.TacticalMapUserUi.Key:
+        type: TacticalMapUserBui
+  - type: TacticalMapUser
+    actionId: CM14RTSActionOpenTacticalMapXeno
+    xenos: true
+    canDraw: true
+    liveUpdate: true
+  - type: Language
+    spokenLanguages:
+    - Xeno
+    understoodLanguages:
+    - Xeno
+    currentLanguage: Xeno
+    defaultLanguage: Xeno
+  - type: NightVision
+    alert: XenoNightVision
+    overlay: true
+  - type: Alerts
+
+- type: entity
+  parent: RMCActionOpenTacticalMapMarine
+  id: CM14RTSActionOpenTacticalMapMarine
+  components:
+  - type: Action
+    checkCanInteract: false
+    checkConsciousness: false
+
+- type: entity
+  parent: RMCActionOpenTacticalMapXeno
+  id: CM14RTSActionOpenTacticalMapXeno
+  components:
+  - type: Action
+    checkCanInteract: false
+    checkConsciousness: false
+
+- type: entity
+  parent: BaseAction
+  id: CM14RTSActionUnitControl
+  name: action-rts-unit-control-name
+  description: action-rts-unit-control-desc
+  components:
+  - type: Action
+    icon:
+      sprite: _CM14RTS/Mobs/Observer/observer.rsi
+      state: eye
+    checkCanInteract: false
+    checkConsciousness: false
+  - type: TargetAction
+    checkCanAccess: false
+    range: 0
+  - type: EntityTargetAction
+    canTargetSelf: false
+    targetCheckCanInteract: false
+    whitelist:
+      components:
+      - RTSControllable
+    event: !type:RTSUnitControlActionEvent
+
+- type: entity
+  parent: BaseMentalAction
+  id: CM14RTSActionReturnToObserver
+  name: action-rts-return-to-observer-name
+  description: action-rts-return-to-observer-desc
+  components:
+  - type: Action
+    icon:
+      sprite: _CM14RTS/Mobs/Observer/observer.rsi
+      state: eye
+    checkCanInteract: false
+    checkConsciousness: false
+  - type: InstantAction
+    event: !type:RTSReturnToObserverActionEvent

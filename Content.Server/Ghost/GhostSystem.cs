@@ -124,7 +124,10 @@ namespace Content.Server.Ghost
             // If component not deleting they can see ghosts.
             if (ent.Comp.LifeStage <= ComponentLifeStage.Running)
             {
-                args.VisibilityMask |= (int)VisibilityFlags.Ghost | (int)VisibilityFlags.ImaginaryFriend; // RMC14
+                args.VisibilityMask |= (int)VisibilityFlags.Ghost | (int)VisibilityFlags.ImaginaryFriend // RMC14
+                    // cm14-rts-edit start
+                    | (int)(VisibilityFlags.RTSObserverUSCM | VisibilityFlags.RTSObserverHive | VisibilityFlags.RTSObserver);
+                    // cm14-rts-edit end
             }
         }
 

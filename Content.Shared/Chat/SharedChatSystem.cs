@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Content.Shared._RMC14.Chat;
 using Content.Shared._RMC14.Xenonids;
 using Content.Shared._RMC14.Xenonids.Evolution;
+using Content.Shared._CM14RTS.Observer; // cm14-rts-edit
 using Content.Shared.Popups;
 using Content.Shared.Radio;
 using Content.Shared.Speech;
@@ -164,13 +165,17 @@ public abstract class SharedChatSystem : EntitySystem
         if (input.StartsWith(RadioCommonPrefix))
         {
             output = SanitizeMessageCapital(input[1..].TrimStart());
-            channel = HasComp<XenoComponent>(source)
+            // cm14-rts-edit start - Hive observer radio common prefix and living queen bypass
+            var isHiveObserver = TryComp<RTSObserverComponent>(source, out var rtsObs) && RTSFactionHelper.Normalize(rtsObs.Faction) == "hive";
+            channel = (HasComp<XenoComponent>(source) || isHiveObserver)
                 ? _prototypeManager.Index<RadioChannelPrototype>(HivemindChannel)
                 : _prototypeManager.Index<RadioChannelPrototype>(CommonChannel);
 
             // RMC14
             if (channel?.ID == HivemindChannel.Id &&
+                !isHiveObserver &&
                 !_xenoEvolution.HasLiving<XenoEvolutionGranterComponent>(1))
+            // cm14-rts-edit end
             {
                 if (!quiet)
                     _popup.PopupEntity(Loc.GetString("rmc-no-queen-hivemind-chat"), source, source, PopupType.LargeCaution);
@@ -212,8 +217,11 @@ public abstract class SharedChatSystem : EntitySystem
             var ev = new GetDefaultRadioChannelEvent();
             RaiseLocalEvent(source, ev);
 
+            // cm14-rts-edit start - Hive observer living queen bypass
             if (ev.Channel == HivemindChannel.Id &&
+                !HasComp<RTSObserverComponent>(source) &&
                 !_xenoEvolution.HasLiving<XenoEvolutionGranterComponent>(1))
+            // cm14-rts-edit end
             {
                 if (!quiet)
                     _popup.PopupEntity(Loc.GetString("rmc-no-queen-hivemind-chat"), source, source, PopupType.LargeCaution);
@@ -233,9 +241,11 @@ public abstract class SharedChatSystem : EntitySystem
             _popup.PopupEntity(msg, source, source);
         }
 
-        // RMC14
+        // cm14-rts-edit start - Hive observer living queen bypass
         if (channel?.ID == HivemindChannel.Id &&
+            !HasComp<RTSObserverComponent>(source) &&
             !_xenoEvolution.HasLiving<XenoEvolutionGranterComponent>(1))
+        // cm14-rts-edit end
         {
             if (!quiet)
                 _popup.PopupEntity(Loc.GetString("rmc-no-queen-hivemind-chat"), source, source, PopupType.LargeCaution);

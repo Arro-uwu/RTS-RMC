@@ -33,6 +33,10 @@
   abstract: true
   save: false
   components: # TODO RMC14 camera recoil from large explosions? check 13
+  # cm14-rts-edit start - RTS controllable unit
+  - type: RTSControllable
+    faction: Hive
+  # cm14-rts-edit end
   - type: ZombieImmune
   - type: BlockEntityStorage
     whitelist:

@@ -1,4 +1,4 @@
-﻿- type: entity
+- type: entity
   save: false
   parent: BaseMobSpecies
   id: RMCBaseMobSpeciesOrganic
@@ -384,3 +384,7 @@
     hideLayersOnEquip:
     - UndergarmentTop
     - Hair
+  # cm14-rts-edit start - RTS controllable unit
+  - type: RTSControllable
+    faction: Marine
+  # cm14-rts-edit end
