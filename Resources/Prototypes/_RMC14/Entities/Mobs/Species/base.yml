@@ -384,7 +384,9 @@
     hideLayersOnEquip:
     - UndergarmentTop
     - Hair
-  # cm14-rts-edit start - RTS controllable unit
+  # cm14-rts-edit start - RTS controllable unit and vision source
   - type: RTSControllable
+    faction: Marine
+  - type: RTSVisionSource
     faction: Marine
   # cm14-rts-edit end
