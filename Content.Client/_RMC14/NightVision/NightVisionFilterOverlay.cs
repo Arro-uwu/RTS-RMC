@@ -1,4 +1,4 @@
-﻿using Content.Shared._RMC14.NightVision;
+using Content.Shared._RMC14.NightVision;
 using Robust.Client.Graphics;
 using Robust.Client.Player;
 using Robust.Shared.Enums;
@@ -22,6 +22,9 @@ public sealed class NightVisionFilterOverlay : Overlay
     public NightVisionFilterOverlay()
     {
         IoCManager.InjectDependencies(this);
+        // cm14-rts-edit start - render filter above night vision overlay
+        ZIndex = 2;
+        // cm14-rts-edit end
         _shader = _prototypes.Index(ShaderId).InstanceUnique();
     }
 

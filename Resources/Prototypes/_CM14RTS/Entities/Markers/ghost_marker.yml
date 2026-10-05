@@ -1,0 +1,7 @@
+- type: entity
+  name: ghost marker
+  id: RTSGhostMarker
+  categories: [ HideSpawnMenu ]
+  components:
+  - type: Sprite
+  - type: RTSGhostMarker

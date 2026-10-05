@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Content.Shared._CM14RTS.Observer;
+using Content.Shared._RMC14.Marines;
+using Content.Shared._RMC14.Xenonids;
 using Content.Shared.Mobs.Components;
 using Content.Shared.Mobs.Systems;
 using Robust.Shared;
@@ -28,8 +31,14 @@ public abstract class SharedRTSVisionSystem : EntitySystem
 
     private readonly HashSet<Entity<OccluderComponent>> _occluders = new();
     private readonly HashSet<Entity<RTSVisionSourceComponent>> _seeds = new();
+    private readonly HashSet<Entity<RTSControllableComponent>> _controllableSeeds = new();
     private readonly HashSet<Vector2i> _viewportTiles = new();
     private readonly HashSet<Vector2i> _opaque = new();
+
+    /// <summary>
+    /// Active visible tiles cached per grid, populated each vision update.
+    /// </summary>
+    private readonly Dictionary<EntityUid, HashSet<Vector2i>> _visibleTilesByGrid = new();
 
     private EntityQuery<EyeComponent> _eyeQuery;
     private EntityQuery<OccluderComponent> _occluderQuery;
@@ -63,23 +72,132 @@ public abstract class SharedRTSVisionSystem : EntitySystem
     }
 
     /// <summary>
+    /// Checks whether a specific grid tile is currently within line-of-sight of any allied RTS unit.
+    /// </summary>
+    public bool IsTileVisible(EntityUid gridUid, Vector2i tile)
+    {
+        if (_visibleTilesByGrid.TryGetValue(gridUid, out var set))
+            return set.Contains(tile);
+
+        return false;
+    }
+
+    /// <summary>
+    /// Gets or creates the visible tiles set for a specific grid.
+    /// </summary>
+    public HashSet<Vector2i> GetOrCreateVisibleTiles(EntityUid gridUid)
+    {
+        if (!_visibleTilesByGrid.TryGetValue(gridUid, out var set))
+        {
+            set = new HashSet<Vector2i>();
+            _visibleTilesByGrid[gridUid] = set;
+        }
+
+        return set;
+    }
+
+    /// <summary>
+    /// Clears cached visible tiles across all grids.
+    /// </summary>
+    public void ClearAllVisibleTiles()
+    {
+        foreach (var set in _visibleTilesByGrid.Values)
+        {
+            set.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Resolves grid and tile coordinates for any entity on a map grid.
+    /// </summary>
+    public bool TryGetTile(EntityUid uid, TransformComponent? xform, out EntityUid gridUid, out Vector2i tile)
+    {
+        gridUid = default;
+        tile = default;
+
+        if (!Resolve(uid, ref xform, false))
+            return false;
+
+        if (xform.GridUid is not { Valid: true } gridId)
+            return false;
+
+        if (!TryComp<MapGridComponent>(gridId, out var gridComp))
+            return false;
+
+        gridUid = gridId;
+        tile = _maps.TileIndicesFor(gridId, gridComp, xform.Coordinates);
+        return true;
+    }
+
+    /// <summary>
+    /// Checks whether the tile beneath this entity is currently illuminated by allied vision.
+    /// </summary>
+    public bool IsEntityTileVisible(EntityUid uid, TransformComponent? xform = null)
+    {
+        if (!TryGetTile(uid, xform, out var gridUid, out var tile))
+            return false;
+
+        return IsTileVisible(gridUid, tile);
+    }
+
+    /// <summary>
+    /// Resolves the RTS commander faction for a player entity (commander observer or directly-controlled unit).
+    /// </summary>
+    public bool TryGetPlayerFaction(EntityUid playerEnt, [NotNullWhen(true)] out string? faction)
+    {
+        faction = null;
+
+        if (TryComp<RTSObserverComponent>(playerEnt, out var observer))
+        {
+            faction = observer.Faction;
+        }
+        else if (TryComp<RTSControlledUnitComponent>(playerEnt, out var controlled) &&
+                 controlled.Observer is { Valid: true } obs &&
+                 TryComp<RTSObserverComponent>(obs, out var obsComp))
+        {
+            faction = obsComp.Faction;
+        }
+
+        return !string.IsNullOrWhiteSpace(faction);
+    }
+
+    /// <summary>
+    /// Checks whether a given entity belongs to an enemy faction relative to ourFaction.
+    /// </summary>
+    public bool IsEnemy(EntityUid uid, string ourFaction, RTSControllableComponent? controllable = null)
+    {
+        var theirFaction = ResolveFaction(uid);
+        if (string.IsNullOrWhiteSpace(theirFaction))
+            return false;
+
+        return !RTSFactionHelper.AreFactionsCompatible(ourFaction, theirFaction);
+    }
+
+    /// <summary>
     /// Ensures faction is populated from RTSControllableComponent if not explicitly set.
     /// </summary>
     public string ResolveFaction(EntityUid uid, RTSVisionSourceComponent? comp = null)
     {
-        if (!Resolve(uid, ref comp, false))
-            return string.Empty;
-
-        if (!string.IsNullOrWhiteSpace(comp.Faction))
+        if (Resolve(uid, ref comp, false) && !string.IsNullOrWhiteSpace(comp.Faction))
             return comp.Faction;
 
         if (TryComp<RTSControllableComponent>(uid, out var controllable) &&
             !string.IsNullOrWhiteSpace(controllable.Faction))
         {
-            comp.Faction = controllable.Faction;
-            Dirty(uid, comp);
-            return comp.Faction;
+            if (comp != null)
+            {
+                comp.Faction = controllable.Faction;
+                Dirty(uid, comp);
+            }
+            return controllable.Faction;
         }
+
+        // Fallbacks for standard RMC factions
+        if (HasComp<XenoComponent>(uid))
+            return "Hive";
+
+        if (HasComp<MarineComponent>(uid))
+            return "Marine";
 
         return string.Empty;
     }
@@ -110,10 +228,13 @@ public abstract class SharedRTSVisionSystem : EntitySystem
     public float GetDefaultVisionRadius(EntityUid uid, EyeComponent? eye = null)
     {
         var baseRange = _cfg.GetCVar(CVars.NetMaxUpdateRange) / 2f;
-        if (_eyeQuery.Resolve(uid, ref eye, false))
-            return baseRange * eye.PvsScale;
+        if (baseRange <= 0.1f)
+            baseRange = 12.5f;
 
-        return baseRange;
+        if (_eyeQuery.Resolve(uid, ref eye, false) && eye.PvsScale > 0.1f)
+            return Math.Max(baseRange * eye.PvsScale, 7.5f);
+
+        return Math.Max(baseRange, 7.5f);
     }
 
     /// <summary>
@@ -159,6 +280,7 @@ public abstract class SharedRTSVisionSystem : EntitySystem
         _viewportTiles.Clear();
         _opaque.Clear();
         _seeds.Clear();
+        _controllableSeeds.Clear();
 
         _seedJob.Grid = (grid.Owner, grid.Comp2);
         var invMatrix = _xforms.GetInvWorldMatrix(grid);
@@ -167,6 +289,8 @@ public abstract class SharedRTSVisionSystem : EntitySystem
         _seedJob.ExpandedBounds = enlargedLocalAabb;
         _parallel.ProcessNow(_seedJob);
         _job.Data.Clear();
+
+        var addedUids = new HashSet<EntityUid>();
 
         foreach (var seed in _seeds)
         {
@@ -183,6 +307,31 @@ public abstract class SharedRTSVisionSystem : EntitySystem
 
             var rangeInTiles = radius / grid.Comp2.TileSize;
             _job.Data.Add(new RTSVisionSeed(seed.Owner, rangeInTiles));
+            addedUids.Add(seed.Owner);
+        }
+
+        foreach (var controllable in _controllableSeeds)
+        {
+            if (addedUids.Contains(controllable.Owner))
+                continue;
+
+            if (TryComp<MobStateComponent>(controllable.Owner, out var mobState) && _mobState.IsDead(controllable.Owner, mobState))
+                continue;
+
+            var sourceFaction = controllable.Comp.Faction;
+            if (string.IsNullOrWhiteSpace(sourceFaction))
+                sourceFaction = ResolveFaction(controllable.Owner);
+
+            if (!RTSFactionHelper.AreFactionsCompatible(faction, sourceFaction))
+                continue;
+
+            var radius = GetDefaultVisionRadius(controllable.Owner);
+            if (radius <= 0.1f)
+                continue;
+
+            var rangeInTiles = radius / grid.Comp2.TileSize;
+            _job.Data.Add(new RTSVisionSeed(controllable.Owner, rangeInTiles));
+            addedUids.Add(controllable.Owner);
         }
 
         if (_job.Data.Count == 0)
@@ -223,6 +372,16 @@ public abstract class SharedRTSVisionSystem : EntitySystem
         _job.Grid = (grid.Owner, grid.Comp2);
         _job.VisibleTiles = visibleTiles;
         _parallel.ProcessNow(_job, _job.Data.Count);
+
+        var gridSet = GetOrCreateVisibleTiles(grid.Owner);
+        if (!ReferenceEquals(gridSet, visibleTiles))
+        {
+            gridSet.Clear();
+            foreach (var tile in visibleTiles)
+            {
+                gridSet.Add(tile);
+            }
+        }
     }
 
     private bool IsOccluded(Entity<BroadphaseComponent, MapGridComponent> grid, Vector2i tile)
@@ -317,6 +476,7 @@ public abstract class SharedRTSVisionSystem : EntitySystem
         public void Execute()
         {
             System._lookup.GetLocalEntitiesIntersecting(Grid.Owner, ExpandedBounds, System._seeds, flags: LookupFlags.All | LookupFlags.Approximate);
+            System._lookup.GetLocalEntitiesIntersecting(Grid.Owner, ExpandedBounds, System._controllableSeeds, flags: LookupFlags.All | LookupFlags.Approximate);
         }
     }
 

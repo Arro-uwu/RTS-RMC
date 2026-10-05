@@ -57,7 +57,7 @@ public sealed class RTSFogOfWarOverlay : Overlay
     public RTSFogOfWarOverlay()
     {
         IoCManager.InjectDependencies(this);
-        ZIndex = 2;
+        ZIndex = 0;
 
         _transform = _entMan.System<SharedTransformSystem>();
         _vision = _entMan.System<SharedRTSVisionSystem>();
@@ -98,24 +98,7 @@ public sealed class RTSFogOfWarOverlay : Overlay
             return;
 
         // Active only for RTS observers or commanders directly controlling a unit
-        string? faction = null;
-        if (_entMan.TryGetComponent<RTSObserverComponent>(localEnt, out var observer))
-        {
-            faction = observer.Faction;
-        }
-        else if (_entMan.TryGetComponent<RTSControlledUnitComponent>(localEnt, out var controlled) &&
-                 controlled.Observer is { Valid: true } obs &&
-                 _entMan.TryGetComponent<RTSObserverComponent>(obs, out var obsComp))
-        {
-            faction = obsComp.Faction;
-        }
-        else if (_entMan.TryGetComponent<RTSControllableComponent>(localEnt, out var controllable) &&
-                 _entMan.HasComponent<RTSControlledUnitComponent>(localEnt))
-        {
-            faction = controllable.Faction;
-        }
-
-        if (string.IsNullOrWhiteSpace(faction))
+        if (!_vision.TryGetPlayerFaction(localEnt.Value, out var faction))
             return;
 
         // Ensure render targets match current viewport size
@@ -153,6 +136,25 @@ public sealed class RTSFogOfWarOverlay : Overlay
         _grids.Clear();
         _mapManager.FindGridsIntersecting(mapId, worldAABB, ref _grids);
 
+        if (_entMan.TryGetComponent<TransformComponent>(localEnt.Value, out var playerXform) &&
+            playerXform.GridUid is { Valid: true } playerGrid &&
+            _entMan.TryGetComponent<MapGridComponent>(playerGrid, out var playerGridComp))
+        {
+            var found = false;
+            foreach (var g in _grids)
+            {
+                if (g.Owner == playerGrid)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                _grids.Add((playerGrid, playerGridComp));
+            }
+        }
+
         // 1. Draw visible tiles to stencil texture
         worldHandle.RenderInRenderTarget(_stencilTexture!, () =>
         {
@@ -161,16 +163,23 @@ public sealed class RTSFogOfWarOverlay : Overlay
                 if (!broadphaseQuery.TryComp(grid.Owner, out var broadphase))
                     continue;
 
+                var visibleTiles = _vision.GetOrCreateVisibleTiles(grid.Owner);
                 if (shouldUpdate)
                 {
-                    _vision.GetView((grid.Owner, broadphase, grid.Comp), faction, worldBounds, _visibleTiles);
+                    visibleTiles.Clear();
+                    _vision.GetView((grid.Owner, broadphase, grid.Comp), faction, worldBounds, visibleTiles);
+
+                    foreach (var tile in visibleTiles)
+                    {
+                        _visibleTiles.Add(tile);
+                    }
                 }
 
                 var gridMatrix = _transform.GetWorldMatrix(grid.Owner);
                 var matty = Matrix3x2.Multiply(gridMatrix, invMatrix);
                 worldHandle.SetTransform(matty);
 
-                foreach (var tile in _visibleTiles)
+                foreach (var tile in visibleTiles)
                 {
                     var aabb = lookups.GetLocalBounds(tile, grid.Comp.TileSize);
                     worldHandle.DrawRect(aabb, Color.White);

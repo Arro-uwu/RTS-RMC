@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using Content.Client.Examine;
 using Content.Shared._RMC14.NightVision;
 using Content.Shared._RMC14.Xenonids;
@@ -30,6 +30,9 @@ public sealed class NightVisionOverlay : Overlay
     public NightVisionOverlay()
     {
         IoCManager.InjectDependencies(this);
+        // cm14-rts-edit start - render night vision above RTS fog of war
+        ZIndex = 1;
+        // cm14-rts-edit end
 
         _container = _entity.System<ContainerSystem>();
         _examine = _entity.System<ExamineSystem>();
