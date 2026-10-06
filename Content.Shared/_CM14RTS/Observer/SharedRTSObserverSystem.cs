@@ -32,7 +32,7 @@ public abstract class SharedRTSObserverSystem : EntitySystem
     [Dependency] private readonly SharedPhysicsSystem _physics = default!;
     [Dependency] private readonly SharedPopupSystem _popup = default!;
     [Dependency] private readonly IGameTiming _timing = default!;
-    [Dependency] private readonly FollowerSystem _follower = default!;
+    [Dependency] protected readonly FollowerSystem Follower = default!;
     [Dependency] protected readonly SharedEyeSystem Eye = default!;
 
     private bool _isReverting;
@@ -74,7 +74,7 @@ public abstract class SharedRTSObserverSystem : EntitySystem
         var verb = new AlternativeVerb
         {
             Priority = 10,
-            Act = () => _follower.StartFollowingEntity(ev.User, ev.Target),
+            Act = () => Follower.StartFollowingEntity(ev.User, ev.Target),
             Impact = LogImpact.Low,
             Text = Loc.GetString("verb-follow-text"),
             Icon = new SpriteSpecifier.Texture(new("/Textures/Interface/VerbIcons/open.svg.192dpi.png")),
@@ -93,19 +93,25 @@ public abstract class SharedRTSObserverSystem : EntitySystem
         if (!RTSFactionHelper.AreFactionsCompatible(observer.Faction, ent.Comp.Faction))
             return;
 
+        var user = ev.User;
         var target = ent.Owner;
         var verb = new AlternativeVerb
         {
             Priority = 20,
             Act = () =>
             {
-                RaiseNetworkEvent(new RTSRequestUnitControlMessage(GetNetEntity(target)));
+                RequestUnitControl(user, target);
             },
             Impact = LogImpact.High,
             Text = Loc.GetString("rts-control-verb-text"),
             Icon = new SpriteSpecifier.Rsi(new("/Textures/_CM14RTS/Mobs/Observer/observer.rsi"), "eye"),
         };
         ev.Verbs.Add(verb);
+    }
+
+    public virtual void RequestUnitControl(EntityUid observer, EntityUid target)
+    {
+        RaiseNetworkEvent(new RTSRequestUnitControlMessage(GetNetEntity(target)));
     }
 
     private void OnGetDefaultRadioChannel(Entity<RTSObserverComponent> ent, ref GetDefaultRadioChannelEvent args)
@@ -252,7 +258,7 @@ public abstract class SharedRTSObserverSystem : EntitySystem
     {
         if (IsInSpace(Transform(args.Following).Coordinates))
         {
-            _follower.StopFollowingEntity(ent.Owner, args.Following);
+            Follower.StopFollowingEntity(ent.Owner, args.Following);
             EnsureSafePosition(ent);
             NotifySpaceBlocked(ent);
         }
@@ -281,7 +287,7 @@ public abstract class SharedRTSObserverSystem : EntitySystem
             if (!TryComp<RTSObserverComponent>(follower, out var observerComp))
                 continue;
 
-            _follower.StopFollowingEntity(follower, ent.Owner);
+            Follower.StopFollowingEntity(follower, ent.Owner);
 
             EntityCoordinates safeCoords;
             if (observerComp.LastValidCoordinates is { } lastValid && lastValid.IsValid(EntityManager) && !IsInSpace(lastValid))
@@ -340,7 +346,7 @@ public abstract class SharedRTSObserverSystem : EntitySystem
         if (IsInSpace(args.NewPosition))
         {
             if (TryComp<FollowerComponent>(ent.Owner, out var follower))
-                _follower.StopFollowingEntity(ent.Owner, follower.Following);
+                Follower.StopFollowingEntity(ent.Owner, follower.Following);
 
             EntityCoordinates safeCoords;
             if (args.OldPosition.IsValid(EntityManager) && !IsInSpace(args.OldPosition))

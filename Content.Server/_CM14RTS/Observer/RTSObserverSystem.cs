@@ -6,6 +6,7 @@ using Content.Server.NPC.Systems;
 using Content.Shared._CM14RTS.Observer;
 using Content.Shared.Actions;
 using Content.Shared.Eye;
+using Content.Shared.Follower.Components;
 using Content.Shared.Mind.Components;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
@@ -169,6 +170,12 @@ public sealed class RTSObserverSystem : SharedRTSObserverSystem
             args.Handled = true;
     }
 
+    public override void RequestUnitControl(EntityUid observer, EntityUid target)
+    {
+        if (TryComp<RTSObserverComponent>(observer, out var obsComp))
+            TryControlUnit((observer, obsComp), target);
+    }
+
     private void OnRequestUnitControl(RTSRequestUnitControlMessage msg, EntitySessionEventArgs args)
     {
         if (args.SenderSession.AttachedEntity is not { Valid: true } attached)
@@ -287,6 +294,10 @@ public sealed class RTSObserverSystem : SharedRTSObserverSystem
     {
         if (!_mind.TryGetMind(observer.Owner, out var mindId, out var mind))
             return;
+
+        // Stop following if observer was following something
+        if (TryComp<FollowerComponent>(observer.Owner, out var follower))
+            Follower.StopFollowingEntity(observer.Owner, follower.Following);
 
         // Move observer entity to target coordinates before visiting
         _transform.SetCoordinates(observer.Owner, _transform.GetMoverCoordinates(target));
