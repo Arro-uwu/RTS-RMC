@@ -1,0 +1,58 @@
+<DefaultWindow xmlns="https://spacestation14.io"
+               Title="{Loc 'rts-observer-warps-title'}"
+               MinSize="480 560"
+               SetSize="480 560">
+    <BoxContainer Orientation="Vertical" HorizontalExpand="True" VerticalExpand="True" Margin="4">
+        <!-- Search bar -->
+        <LineEdit Name="SearchBar"
+                  PlaceHolder="{Loc 'rts-observer-warps-search-placeholder'}"
+                  HorizontalExpand="True"
+                  Margin="0 0 0 6" />
+
+        <ScrollContainer Name="WarpsScroll" VerticalExpand="True" HorizontalExpand="True" HScrollEnabled="False">
+            <BoxContainer Orientation="Vertical" VerticalExpand="True" HorizontalExpand="True" SeparationOverride="6">
+                <!-- Favorites Section -->
+                <BoxContainer Orientation="Horizontal" HorizontalExpand="True" Margin="2 2 2 0">
+                    <Label Text="{Loc 'rts-observer-warps-favorites'}"
+                           FontColorOverride="#ffd700"
+                           StyleClasses="LabelSubHeader" />
+                </BoxContainer>
+
+                <BoxContainer Name="FavoritesContainer"
+                              Orientation="Vertical"
+                              HorizontalExpand="True"
+                              SeparationOverride="3">
+                    <!-- Populated dynamically -->
+                </BoxContainer>
+
+                <Label Name="NoFavoritesLabel"
+                       Text="{Loc 'rts-observer-warps-no-favorites'}"
+                       FontColorOverride="#777777"
+                       Margin="8 2 0 4" />
+
+                <!-- Divider -->
+                <PanelContainer StyleClasses="LowDivider" MinHeight="2" Margin="0 4" />
+
+                <!-- All Points Section -->
+                <BoxContainer Orientation="Horizontal" HorizontalExpand="True" Margin="2 2 2 0">
+                    <Label Text="{Loc 'rts-observer-warps-all'}"
+                           FontColorOverride="#9bc5e8"
+                           StyleClasses="LabelSubHeader" />
+                </BoxContainer>
+
+                <BoxContainer Name="AllPointsContainer"
+                              Orientation="Vertical"
+                              HorizontalExpand="True"
+                              SeparationOverride="3">
+                    <!-- Populated dynamically -->
+                </BoxContainer>
+
+                <Label Name="NoPointsLabel"
+                       Text="{Loc 'rts-observer-warps-no-points'}"
+                       FontColorOverride="#777777"
+                       Margin="8 2 0 4"
+                       Visible="False" />
+            </BoxContainer>
+        </ScrollContainer>
+    </BoxContainer>
+</DefaultWindow>

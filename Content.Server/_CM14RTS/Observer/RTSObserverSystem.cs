@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using Content.Server.Mind;
 using Content.Server.NPC.HTN;
 using Content.Server.NPC.Systems;
@@ -10,9 +11,15 @@ using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
 using Content.Shared.Mobs.Systems;
 using Content.Shared.Popups;
+using Content.Shared.Roles;
+using Content.Shared.Warps;
 using Robust.Server.GameObjects;
+using Robust.Server.Physics;
 using Robust.Server.Player;
+using Robust.Shared.Map;
+using Robust.Shared.Physics.Components;
 using Robust.Shared.Player;
+using Robust.Shared.Prototypes;
 
 namespace Content.Server._CM14RTS.Observer;
 
@@ -26,6 +33,8 @@ public sealed class RTSObserverSystem : SharedRTSObserverSystem
     [Dependency] private readonly SharedPopupSystem _popup = default!;
     [Dependency] private readonly MobStateSystem _mobState = default!;
     [Dependency] private readonly NPCSystem _npc = default!;
+    [Dependency] private readonly UserInterfaceSystem _ui = default!;
+    [Dependency] private readonly PhysicsSystem _physics = default!;
 
     public override void Initialize()
     {
@@ -41,17 +50,27 @@ public sealed class RTSObserverSystem : SharedRTSObserverSystem
         SubscribeLocalEvent<RTSControlledUnitComponent, MobStateChangedEvent>(OnControlledMobStateChanged);
         SubscribeLocalEvent<RTSControlledUnitComponent, ComponentShutdown>(OnControlledShutdown);
 
+        SubscribeLocalEvent<RTSObserverComponent, RTSObserverOpenWarpsActionEvent>(OnOpenWarpsAction);
+        Subs.BuiEvents<RTSObserverComponent>(RTSObserverWarpsUiKey.Key, subs =>
+        {
+            subs.Event<BoundUIOpenedEvent>(OnWarpsUiOpened);
+            subs.Event<RTSObserverWarpToMessage>(OnWarpToMessage);
+        });
+
         SubscribeNetworkEvent<RTSRequestUnitControlMessage>(OnRequestUnitControl);
     }
 
     private void OnObserverStartup(Entity<RTSObserverComponent> ent, ref ComponentStartup args)
     {
+        EnsureSafePosition(ent);
         UpdateVisibility(ent);
     }
 
     private void OnObserverMapInit(Entity<RTSObserverComponent> ent, ref MapInitEvent args)
     {
+        EnsureSafePosition(ent);
         EnsureControlAction(ent);
+        EnsureWarpsAction(ent);
     }
 
     private void OnObserverShutdown(Entity<RTSObserverComponent> ent, ref ComponentShutdown args)
@@ -60,6 +79,12 @@ public sealed class RTSObserverSystem : SharedRTSObserverSystem
         {
             _actions.RemoveAction(ent.Owner, ent.Comp.ControlActionEntity);
             ent.Comp.ControlActionEntity = null;
+        }
+
+        if (ent.Comp.WarpsActionEntity != null)
+        {
+            _actions.RemoveAction(ent.Owner, ent.Comp.WarpsActionEntity);
+            ent.Comp.WarpsActionEntity = null;
         }
 
         if (Terminating(ent))
@@ -77,7 +102,9 @@ public sealed class RTSObserverSystem : SharedRTSObserverSystem
 
     private void OnPlayerAttached(Entity<RTSObserverComponent> ent, ref PlayerAttachedEvent args)
     {
+        EnsureSafePosition(ent);
         EnsureControlAction(ent);
+        EnsureWarpsAction(ent);
         Eye.RefreshVisibilityMask(ent.Owner);
     }
 
@@ -86,6 +113,15 @@ public sealed class RTSObserverSystem : SharedRTSObserverSystem
         if (ent.Comp.ControlActionEntity == null && !string.IsNullOrEmpty(ent.Comp.ControlAction))
         {
             _actions.AddAction(ent.Owner, ref ent.Comp.ControlActionEntity, ent.Comp.ControlAction);
+            Dirty(ent);
+        }
+    }
+
+    private void EnsureWarpsAction(Entity<RTSObserverComponent> ent)
+    {
+        if (ent.Comp.WarpsActionEntity == null && !string.IsNullOrEmpty(ent.Comp.WarpsAction))
+        {
+            _actions.AddAction(ent.Owner, ref ent.Comp.WarpsActionEntity, ent.Comp.WarpsAction);
             Dirty(ent);
         }
     }
@@ -329,9 +365,118 @@ public sealed class RTSObserverSystem : SharedRTSObserverSystem
 
         if (!TerminatingOrDeleted(observer))
         {
+            if (TryComp<RTSObserverComponent>(observer, out var obsComp))
+                EnsureSafePosition((observer, obsComp));
+
             Eye.RefreshVisibilityMask(observer);
             _popup.PopupEntity(Loc.GetString("rts-control-returned"), observer, observer);
         }
+    }
+
+    #endregion
+
+    #region Observer Warps (Fast Travel)
+
+    private void OnOpenWarpsAction(Entity<RTSObserverComponent> ent, ref RTSObserverOpenWarpsActionEvent args)
+    {
+        if (args.Handled)
+            return;
+
+        args.Handled = true;
+        _ui.TryToggleUi(ent.Owner, RTSObserverWarpsUiKey.Key, ent.Owner);
+    }
+
+    private void OnWarpsUiOpened(Entity<RTSObserverComponent> ent, ref BoundUIOpenedEvent args)
+    {
+        UpdateWarpsState(ent);
+    }
+
+    private void OnWarpToMessage(Entity<RTSObserverComponent> ent, ref RTSObserverWarpToMessage args)
+    {
+        if (!TryGetEntity(args.Target, out var target))
+            return;
+
+        TryWarpTo(ent, target.Value);
+    }
+
+    public void UpdateWarpsState(Entity<RTSObserverComponent> ent)
+    {
+        var warps = new List<RTSObserverWarpPoint>();
+        var seenLocations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Warp Points (map landmarks, rooms, vehicles, shuttles, etc.)
+        var warpQuery = AllEntityQuery<WarpPointComponent, MetaDataComponent, TransformComponent>();
+        while (warpQuery.MoveNext(out var uid, out var warp, out var meta, out var xform))
+        {
+            if (IsInSpace(xform.Coordinates))
+                continue;
+
+            var name = warp.Location;
+            if (string.IsNullOrWhiteSpace(name))
+                name = meta.EntityName;
+
+            if (string.IsNullOrWhiteSpace(name) || name.Equals("warp point", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!seenLocations.Add(name))
+                continue;
+
+            warps.Add(new RTSObserverWarpPoint(GetNetEntity(uid), name, "Warp"));
+        }
+
+        // Sort alphabetically by Name
+        warps.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+
+        _ui.SetUiState(ent.Owner, RTSObserverWarpsUiKey.Key, new RTSObserverWarpsBuiState(warps));
+    }
+
+    public bool TryWarpTo(Entity<RTSObserverComponent> ent, EntityUid target)
+    {
+        if (!CanWarpTo(ent, target))
+            return false;
+
+        DoWarpTo(ent, target);
+        return true;
+    }
+
+    public bool CanWarpTo(Entity<RTSObserverComponent> ent, EntityUid target, bool quiet = false)
+    {
+        if (!Exists(ent) || !Exists(target))
+            return false;
+
+        if (!HasComp<TransformComponent>(ent) || !HasComp<TransformComponent>(target))
+            return false;
+
+        if (IsInSpace(Transform(target).Coordinates))
+        {
+            if (!quiet)
+                _popup.PopupEntity(Loc.GetString("rts-observer-space-warp-blocked"), ent.Owner, ent.Owner, PopupType.MediumCaution);
+            return false;
+        }
+
+        return true;
+    }
+
+    public void DoWarpTo(Entity<RTSObserverComponent> ent, EntityUid target)
+    {
+        var xform = Transform(ent.Owner);
+        var targetCoords = Transform(target).Coordinates;
+        if (IsInSpace(targetCoords))
+            return;
+
+        _transform.SetCoordinates(ent.Owner, xform, targetCoords);
+        _transform.AttachToGridOrMap(ent.Owner, xform);
+
+        ent.Comp.LastValidCoordinates = targetCoords;
+
+        if (TryComp<PhysicsComponent>(ent.Owner, out var physics))
+            _physics.SetLinearVelocity(ent.Owner, Vector2.Zero, body: physics);
+
+        var targetName = Name(target);
+        if (TryComp<WarpPointComponent>(target, out var warp) && !string.IsNullOrWhiteSpace(warp.Location))
+            targetName = warp.Location;
+
+        _popup.PopupEntity(Loc.GetString("rts-observer-warped-to", ("target", targetName)), ent.Owner, ent.Owner);
     }
 
     #endregion

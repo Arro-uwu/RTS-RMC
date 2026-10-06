@@ -1,4 +1,5 @@
 using Robust.Shared.GameStates;
+using Robust.Shared.Map;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization;
 
@@ -51,6 +52,18 @@ public sealed partial class RTSObserverComponent : Component
     public EntityUid? ControlActionEntity;
 
     /// <summary>
+    /// Prototype for the action used to open the observer warps menu.
+    /// </summary>
+    [DataField, AutoNetworkedField]
+    public EntProtoId WarpsAction = "CM14RTSActionObserverWarps";
+
+    /// <summary>
+    /// Granted warps action entity instance.
+    /// </summary>
+    [DataField, AutoNetworkedField]
+    public EntityUid? WarpsActionEntity;
+
+    /// <summary>
     /// Prototype for the return action granted to units while controlled.
     /// </summary>
     [DataField, AutoNetworkedField]
@@ -73,6 +86,17 @@ public sealed partial class RTSObserverComponent : Component
     /// </summary>
     [DataField, AutoNetworkedField]
     public bool CanSeeOtherObservers = false;
+
+    /// <summary>
+    /// Last confirmed valid non-space coordinates for boundary clamping.
+    /// </summary>
+    [DataField, AutoNetworkedField]
+    public EntityCoordinates? LastValidCoordinates;
+
+    /// <summary>
+    /// Last game time a space boundary popup was displayed.
+    /// </summary>
+    public TimeSpan LastSpacePopupTime;
 }
 
 [Serializable, NetSerializable]

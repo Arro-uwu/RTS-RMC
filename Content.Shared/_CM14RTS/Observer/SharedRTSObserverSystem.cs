@@ -1,22 +1,41 @@
+using System.Linq;
+using System.Numerics;
 using Content.Shared.Database;
 using Content.Shared.Eye;
 using Content.Shared.Follower;
+using Content.Shared.Follower.Components;
 using Content.Shared.Ghost;
 using Content.Shared.Hands;
 using Content.Shared.Interaction.Events;
 using Content.Shared.Item;
+using Content.Shared.Maps;
+using Content.Shared.Physics;
+using Content.Shared.Popups;
 using Content.Shared.Radio;
 using Content.Shared.Throwing;
 using Content.Shared.Verbs;
 using Robust.Shared.GameStates;
+using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
+using Robust.Shared.Physics.Components;
+using Robust.Shared.Physics.Systems;
+using Robust.Shared.Timing;
 using Robust.Shared.Utility;
 
 namespace Content.Shared._CM14RTS.Observer;
 
 public abstract class SharedRTSObserverSystem : EntitySystem
 {
+    [Dependency] private readonly TurfSystem _turf = default!;
+    [Dependency] private readonly SharedTransformSystem _transform = default!;
+    [Dependency] private readonly SharedMapSystem _mapSystem = default!;
+    [Dependency] private readonly SharedPhysicsSystem _physics = default!;
+    [Dependency] private readonly SharedPopupSystem _popup = default!;
+    [Dependency] private readonly IGameTiming _timing = default!;
     [Dependency] private readonly FollowerSystem _follower = default!;
     [Dependency] protected readonly SharedEyeSystem Eye = default!;
+
+    private bool _isReverting;
 
     public override void Initialize()
     {
@@ -32,6 +51,10 @@ public abstract class SharedRTSObserverSystem : EntitySystem
         SubscribeLocalEvent<RTSObserverComponent, DropAttemptEvent>(OnAttempt);
         SubscribeLocalEvent<RTSObserverComponent, ThrowAttemptEvent>(OnAttempt);
 
+        SubscribeLocalEvent<RTSObserverComponent, MoveEvent>(OnObserverMove);
+        SubscribeLocalEvent<FollowedComponent, MoveEvent>(OnFollowedMove);
+        SubscribeLocalEvent<RTSObserverComponent, StartedFollowingEntityEvent>(OnStartedFollowing);
+
         SubscribeLocalEvent<RTSObserverComponent, GetDefaultRadioChannelEvent>(OnGetDefaultRadioChannel);
         SubscribeLocalEvent<RTSObserverComponent, GetVisMaskEvent>(OnObserverGetVisMask);
         SubscribeLocalEvent<RTSObserverComponent, AfterAutoHandleStateEvent>(OnAfterHandleState);
@@ -43,6 +66,9 @@ public abstract class SharedRTSObserverSystem : EntitySystem
             return;
 
         if (!TryComp<RTSObserverComponent>(ev.User, out var observer) || !observer.CanFollow)
+            return;
+
+        if (IsInSpace(Transform(ev.Target).Coordinates))
             return;
 
         var verb = new AlternativeVerb
@@ -219,4 +245,265 @@ public abstract class SharedRTSObserverSystem : EntitySystem
     {
         Eye.RefreshVisibilityMask(ent.Owner);
     }
+
+    #region Space Boundary & Movement Enforcement
+
+    private void OnStartedFollowing(Entity<RTSObserverComponent> ent, ref StartedFollowingEntityEvent args)
+    {
+        if (IsInSpace(Transform(args.Following).Coordinates))
+        {
+            _follower.StopFollowingEntity(ent.Owner, args.Following);
+            EnsureSafePosition(ent);
+            NotifySpaceBlocked(ent);
+        }
+    }
+
+    private void OnFollowedMove(Entity<FollowedComponent> ent, ref MoveEvent args)
+    {
+        if (_timing.ApplyingState)
+            return;
+
+        if (TerminatingOrDeleted(ent))
+            return;
+
+        if (!args.NewPosition.IsValid(EntityManager))
+            return;
+
+        if (!IsInSpace(args.NewPosition))
+            return;
+
+        if (ent.Comp.Following.Count == 0)
+            return;
+
+        var followers = ent.Comp.Following.ToArray();
+        foreach (var follower in followers)
+        {
+            if (!TryComp<RTSObserverComponent>(follower, out var observerComp))
+                continue;
+
+            _follower.StopFollowingEntity(follower, ent.Owner);
+
+            EntityCoordinates safeCoords;
+            if (observerComp.LastValidCoordinates is { } lastValid && lastValid.IsValid(EntityManager) && !IsInSpace(lastValid))
+            {
+                safeCoords = lastValid;
+            }
+            else if (args.OldPosition.IsValid(EntityManager) && !IsInSpace(args.OldPosition))
+            {
+                safeCoords = args.OldPosition;
+            }
+            else if (TryFindSafeGridCoordinates((follower, observerComp), out var gridCoords))
+            {
+                safeCoords = gridCoords;
+            }
+            else
+            {
+                continue;
+            }
+
+            observerComp.LastValidCoordinates = safeCoords;
+
+            _isReverting = true;
+            try
+            {
+                _transform.SetCoordinates(follower, safeCoords);
+                _transform.AttachToGridOrMap(follower);
+            }
+            finally
+            {
+                _isReverting = false;
+            }
+
+            if (TryComp<PhysicsComponent>(follower, out var physics))
+            {
+                _physics.SetLinearVelocity(follower, Vector2.Zero, body: physics);
+            }
+
+            NotifySpaceBlocked((follower, observerComp));
+        }
+    }
+
+    private void OnObserverMove(Entity<RTSObserverComponent> ent, ref MoveEvent args)
+    {
+        if (_timing.ApplyingState)
+            return;
+
+        if (_isReverting)
+            return;
+
+        if (TerminatingOrDeleted(ent))
+            return;
+
+        if (!args.NewPosition.IsValid(EntityManager))
+            return;
+
+        if (IsInSpace(args.NewPosition))
+        {
+            if (TryComp<FollowerComponent>(ent.Owner, out var follower))
+                _follower.StopFollowingEntity(ent.Owner, follower.Following);
+
+            EntityCoordinates safeCoords;
+            if (args.OldPosition.IsValid(EntityManager) && !IsInSpace(args.OldPosition))
+            {
+                safeCoords = args.OldPosition;
+            }
+            else if (ent.Comp.LastValidCoordinates is { } lastValid && lastValid.IsValid(EntityManager) && !IsInSpace(lastValid))
+            {
+                safeCoords = lastValid;
+            }
+            else if (TryFindSafeGridCoordinates(ent, out var gridCoords))
+            {
+                safeCoords = gridCoords;
+            }
+            else
+            {
+                return;
+            }
+
+            ent.Comp.LastValidCoordinates = safeCoords;
+
+            _isReverting = true;
+            try
+            {
+                _transform.SetCoordinates(ent.Owner, safeCoords);
+                _transform.AttachToGridOrMap(ent.Owner);
+            }
+            finally
+            {
+                _isReverting = false;
+            }
+
+            if (TryComp<PhysicsComponent>(ent.Owner, out var physics))
+            {
+                _physics.SetLinearVelocity(ent.Owner, Vector2.Zero, body: physics);
+            }
+
+            NotifySpaceBlocked(ent);
+        }
+        else
+        {
+            ent.Comp.LastValidCoordinates = args.NewPosition;
+        }
+    }
+
+    public bool IsInSpace(EntityCoordinates coordinates)
+    {
+        if (!coordinates.IsValid(EntityManager))
+            return true;
+
+        var tile = _turf.GetTileRef(coordinates);
+        if (tile == null || tile.Value.Tile.IsEmpty)
+            return true;
+
+        return _turf.IsSpace(tile.Value);
+    }
+
+    public bool IsInSpace(MapCoordinates coordinates)
+    {
+        return IsInSpace(_transform.ToCoordinates(coordinates));
+    }
+
+    public void NotifySpaceBlocked(Entity<RTSObserverComponent> ent)
+    {
+        var curTime = _timing.CurTime;
+        if (curTime - ent.Comp.LastSpacePopupTime < TimeSpan.FromSeconds(2))
+            return;
+
+        ent.Comp.LastSpacePopupTime = curTime;
+        _popup.PopupPredicted(Loc.GetString("rts-observer-space-blocked"), ent.Owner, ent.Owner, PopupType.MediumCaution);
+    }
+
+    public bool EnsureSafePosition(Entity<RTSObserverComponent> ent)
+    {
+        var xform = Transform(ent.Owner);
+        if (!IsInSpace(xform.Coordinates))
+        {
+            ent.Comp.LastValidCoordinates = xform.Coordinates;
+            return true;
+        }
+
+        EntityCoordinates safeCoords;
+        if (ent.Comp.LastValidCoordinates is { } lastValid && lastValid.IsValid(EntityManager) && !IsInSpace(lastValid))
+        {
+            safeCoords = lastValid;
+        }
+        else if (TryFindSafeGridCoordinates(ent, out var gridCoords))
+        {
+            safeCoords = gridCoords;
+        }
+        else
+        {
+            return false;
+        }
+
+        ent.Comp.LastValidCoordinates = safeCoords;
+
+        _isReverting = true;
+        try
+        {
+            _transform.SetCoordinates(ent.Owner, safeCoords);
+            _transform.AttachToGridOrMap(ent.Owner);
+        }
+        finally
+        {
+            _isReverting = false;
+        }
+
+        if (TryComp<PhysicsComponent>(ent.Owner, out var physics))
+        {
+            _physics.SetLinearVelocity(ent.Owner, Vector2.Zero, body: physics);
+        }
+
+        return true;
+    }
+
+    public bool TryFindSafeGridCoordinates(Entity<RTSObserverComponent> ent, out EntityCoordinates safeCoordinates)
+    {
+        safeCoordinates = default;
+        var xform = Transform(ent.Owner);
+        var mapId = xform.MapID;
+        if (mapId == MapId.Nullspace)
+            return false;
+
+        if (xform.GridUid is { Valid: true } currentGrid && TryComp<MapGridComponent>(currentGrid, out var currentMapGrid))
+        {
+            if (TryGetAnyFloorCoordinates(currentGrid, currentMapGrid, out safeCoordinates))
+                return true;
+        }
+
+        var gridQuery = AllEntityQuery<MapGridComponent, TransformComponent>();
+        while (gridQuery.MoveNext(out var gridUid, out var mapGrid, out var gridXform))
+        {
+            if (gridXform.MapID != mapId)
+                continue;
+
+            if (TryGetAnyFloorCoordinates(gridUid, mapGrid, out safeCoordinates))
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool TryGetAnyFloorCoordinates(EntityUid gridUid, MapGridComponent mapGrid, out EntityCoordinates coords)
+    {
+        coords = default;
+        var tiles = _mapSystem.GetAllTilesEnumerator(gridUid, mapGrid);
+        while (tiles.MoveNext(out var tileRefNullable))
+        {
+            if (tileRefNullable == null)
+                continue;
+
+            var tileRef = tileRefNullable.Value;
+            if (tileRef.Tile.IsEmpty || _turf.IsSpace(tileRef))
+                continue;
+
+            coords = _turf.GetTileCenter(tileRef);
+            return true;
+        }
+
+        return false;
+    }
+
+    #endregion
 }
+

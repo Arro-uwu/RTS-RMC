@@ -13,3 +13,19 @@ rts-control-already-visiting = Вы уже управляете другим ю�
 rts-control-success = Прямой контроль установлен: {$unit}
 rts-control-returned = Возврат в режим наблюдателя.
 rts-control-unit-died = Юнит погиб! Возврат в режим наблюдателя.
+
+action-rts-observer-warps-name = Быстрое перемещение
+action-rts-observer-warps-desc = Открыть меню телепортации по ключевым точкам карты.
+
+rts-observer-warps-title = Точки перемещения
+rts-observer-warps-search-placeholder = Поиск локации...
+rts-observer-warps-favorites = ★ Избранное
+rts-observer-warps-no-favorites = Нет избранных точек (нажмите ☆, чтобы добавить)
+rts-observer-warps-all = Все точки
+rts-observer-warps-no-points = Точки не найдены
+rts-observer-warps-star = Добавить в избранное
+rts-observer-warps-unstar = Удалить из избранного
+rts-observer-warps-teleport-tooltip = Переместиться к {$name}
+rts-observer-warped-to = Перемещение к {$target}
+rts-observer-space-blocked = Нельзя покидать пределы корабля или базы! Выход в открытый космос запрещен.
+rts-observer-space-warp-blocked = Точка перемещения находится в открытом космосе!

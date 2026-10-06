@@ -58,6 +58,9 @@
         requireInputValidation: false
       enum.TacticalMapUserUi.Key:
         type: TacticalMapUserBui
+      enum.RTSObserverWarpsUiKey.Key:
+        type: RTSObserverWarpsBui
+        requireInputValidation: false
   - type: ActiveRadio
     channels:
     - MarineHighCommand
@@ -148,6 +151,9 @@
         requireInputValidation: false
       enum.TacticalMapUserUi.Key:
         type: TacticalMapUserBui
+      enum.RTSObserverWarpsUiKey.Key:
+        type: RTSObserverWarpsBui
+        requireInputValidation: false
   - type: TacticalMapUser
     actionId: CM14RTSActionOpenTacticalMapXeno
     xenos: true
@@ -218,3 +224,16 @@
     checkConsciousness: false
   - type: InstantAction
     event: !type:RTSReturnToObserverActionEvent
+
+- type: entity
+  parent: BaseMentalAction
+  id: CM14RTSActionObserverWarps
+  name: action-rts-observer-warps-name
+  description: action-rts-observer-warps-desc
+  components:
+  - type: Action
+    icon: Interface/VerbIcons/point.svg.192dpi.png
+    checkCanInteract: false
+    checkConsciousness: false
+  - type: InstantAction
+    event: !type:RTSObserverOpenWarpsActionEvent
