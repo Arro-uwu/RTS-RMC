@@ -25,6 +25,7 @@ public sealed class RTSGhostMarkerSystem : EntitySystem
     [Dependency] private readonly SharedRTSVisionSystem _vision = default!;
     [Dependency] private readonly SharedTransformSystem _transform = default!;
     [Dependency] private readonly SpriteSystem _sprite = default!;
+    [Dependency] private readonly MetaDataSystem _metaData = default!;
 
     private float _updateRate = 1f / 30f;
     private float _accumulator;
@@ -286,6 +287,9 @@ public sealed class RTSGhostMarkerSystem : EntitySystem
 
         // Match rotation
         _transform.SetLocalRotationNoLerp(ghost, data.LastSeenRotation);
+
+        _metaData.SetEntityName(ghost, Name(enemy.Owner));
+        _metaData.SetEntityDescription(ghost, Description(enemy.Owner));
 
         var markerComp = EnsureComp<RTSGhostMarkerComponent>(ghost);
         markerComp.TrackedEntity = data.Entity;

@@ -15,5 +15,5 @@ public sealed class CM14RTSCVars
     /// Alpha transparency of the Fog of War veil outside allied vision.
     /// </summary>
     public static readonly CVarDef<float> RTSFogOfWarAlpha =
-        CVarDef.Create("rts.fow_alpha", 0.88f, CVar.CLIENTONLY | CVar.ARCHIVE);
+        CVarDef.Create("rts.fow_alpha", 0.2f, CVar.CLIENTONLY | CVar.ARCHIVE);
 }

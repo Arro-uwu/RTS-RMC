@@ -1,7 +1,10 @@
+using System.Collections.Generic;
 using System.Linq;
+using Content.Server._RMC14.Chat.Chat;
 using Content.Server.Mind;
 using Content.Shared._CM14RTS.Observer;
 using Content.Shared._CM14RTS.Vision;
+using Content.Shared.Chat;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
 using Robust.Server.GameObjects;
@@ -14,6 +17,8 @@ public sealed class RTSVisionSystem : SharedRTSVisionSystem
     [Dependency] private readonly ViewSubscriberSystem _viewSubscriber = default!;
     [Dependency] private readonly MindSystem _mind = default!;
 
+    private readonly List<ICommonSession> _chatRemoveSessions = new();
+
     public override void Initialize()
     {
         base.Initialize();
@@ -23,6 +28,62 @@ public sealed class RTSVisionSystem : SharedRTSVisionSystem
 
         SubscribeLocalEvent<RTSVisionSourceComponent, ComponentShutdown>(OnVisionSourceShutdown);
         SubscribeLocalEvent<RTSVisionSourceComponent, MobStateChangedEvent>(OnVisionMobStateChanged);
+
+        SubscribeLocalEvent<TransformComponent, ChatMessageAfterGetRecipientsEvent>(OnChatGetRecipients);
+    }
+
+    private void OnChatGetRecipients(Entity<TransformComponent> ent, ref ChatMessageAfterGetRecipientsEvent args)
+    {
+        if ((args.Channel & (ChatChannel.Local | ChatChannel.Whisper | ChatChannel.Emotes)) == 0)
+            return;
+
+        _chatRemoveSessions.Clear();
+        foreach (var (session, _) in args.Recipients)
+        {
+            if (session.AttachedEntity is not { Valid: true } attached)
+                continue;
+
+            if (!TryComp<RTSObserverComponent>(attached, out var observer))
+                continue;
+
+            // If the speaker is an enemy to this observer's faction, check if any allied unit has vision on the speaker
+            if (IsEnemy(ent.Owner, observer.Faction))
+            {
+                if (!CanFactionSeeEntity(ent.Owner, ent.Comp, observer.Faction))
+                {
+                    _chatRemoveSessions.Add(session);
+                }
+            }
+        }
+
+        foreach (var session in _chatRemoveSessions)
+        {
+            args.Recipients.Remove(session);
+        }
+    }
+
+    private bool CanFactionSeeEntity(EntityUid target, TransformComponent targetXform, string faction)
+    {
+        var targetPos = targetXform.Coordinates;
+        var query = EntityQueryEnumerator<RTSVisionSourceComponent, TransformComponent>();
+        while (query.MoveNext(out var uid, out var vision, out var xform))
+        {
+            if (!vision.Enabled || !IsVisionActive(uid, vision))
+                continue;
+
+            var sourceFaction = ResolveFaction((uid, vision));
+            if (!RTSFactionHelper.AreFactionsCompatible(faction, sourceFaction))
+                continue;
+
+            if (xform.Coordinates.TryDistance(EntityManager, targetPos, out var dist))
+            {
+                var radius = GetVisionRadius(uid, vision);
+                if (dist <= radius)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private void OnPlayerAttached(PlayerAttachedEvent args)

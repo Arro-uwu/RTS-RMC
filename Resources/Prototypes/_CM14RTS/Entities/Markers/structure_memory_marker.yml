@@ -1,10 +1,10 @@
 - type: entity
-  name: ghost marker
-  id: RTSGhostMarker
+  name: structure memory marker
+  id: RTSStructureMemoryMarker
   categories: [ HideSpawnMenu ]
   components:
   - type: Sprite
-  - type: RTSGhostMarker
+  - type: RTSStructureMemoryMarker
   - type: Tag
     tags:
     - HideContextMenu

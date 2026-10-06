@@ -4,7 +4,12 @@ using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Content.Shared._CM14RTS.Observer;
 using Content.Shared._RMC14.Marines;
+using Content.Shared._RMC14.Sentry;
 using Content.Shared._RMC14.Xenonids;
+using Content.Shared._RMC14.Xenonids.Construction;
+using Content.Shared._RMC14.Xenonids.Construction.Tunnel;
+using Content.Shared._RMC14.Xenonids.Hive;
+using Content.Shared._RMC14.Xenonids.Weeds;
 using Content.Shared.Mobs.Components;
 using Content.Shared.Mobs.Systems;
 using Robust.Shared;
@@ -193,11 +198,22 @@ public abstract class SharedRTSVisionSystem : EntitySystem
         }
 
         // Fallbacks for standard RMC factions
-        if (HasComp<XenoComponent>(uid))
+        // cm14-rts-edit start - structure and unit faction resolution
+        if (HasComp<XenoComponent>(uid) ||
+            HasComp<XenoWeedsComponent>(uid) ||
+            HasComp<XenoConstructionSupportComponent>(uid) ||
+            HasComp<XenoTunnelComponent>(uid) ||
+            HasComp<HiveMemberComponent>(uid))
+        {
             return "Hive";
+        }
 
-        if (HasComp<MarineComponent>(uid))
+        if (HasComp<MarineComponent>(uid) ||
+            HasComp<SentryComponent>(uid))
+        {
             return "Marine";
+        }
+        // cm14-rts-edit end
 
         return string.Empty;
     }

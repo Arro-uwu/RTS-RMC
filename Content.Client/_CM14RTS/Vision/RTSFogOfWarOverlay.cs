@@ -233,7 +233,7 @@ public sealed class RTSFogOfWarOverlay : Overlay
         var baseFrame = (int) (curTime / 0.35f);
 
         // Murky volumetric greenish-slate smoke tint matching the reference RMC fog aesthetic
-        var smokeColor = new Color(0.13f, 0.17f, 0.18f, 0.50f);
+        var smokeColor = new Color(0.13f, 0.17f, 0.18f, 0.25f);
 
         for (var x = minX; x <= maxX; x++)
         {
